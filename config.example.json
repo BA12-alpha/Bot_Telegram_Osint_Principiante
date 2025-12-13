@@ -1,0 +1,25 @@
+{
+  "telegram": {
+    "bot_token": "PON_AQUI_TU_TOKEN_DE_TELEGRAM"
+  },
+  "services": {
+    "urlscan_api_key": "PON_AQUI_TU_API_KEY_DE_URLSCAN_O_DEJA_VACIO_SI_NO_USAS"
+  },
+  "extra_apis": {
+    "VT_API": "OPCIONAL_VIRUSTOTAL_API_KEY",
+    "SHODAN_API": "OPCIONAL_SHODAN_API_KEY",
+    "ALIENVAULT_OTX_API": "OPCIONAL_ALIENVAULT_API_KEY",
+    "NUMVERIFY_API": "OPCIONAL_NUMVERIFY_API_KEY",
+    "EMAIL_VERIFY_API": "OPCIONAL_EMAILVERIFY_API_KEY",
+    "IPINFO_API": "OPCIONAL_IPINFO_API_KEY",
+    "HIBP_API": "OPCIONAL_HIBP_API_KEY",
+    "IPSTACK_API": "OPCIONAL_IPSTACK_API_KEY"
+  },
+  "settings": {
+    "results_dir": "./results",
+    "log_level": "INFO",
+    "max_history_per_user": 50,
+    "max_image_size_mb": 8,
+    "requests_timeout_seconds": 10
+  }
+}
