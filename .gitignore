@@ -7,6 +7,10 @@ __pycache__/
 # Configuración sensible
 config.json
 
+# Base de datos del bot
+cybermentor.db
+*.db
+
 # Resultados del bot (contienen datos de búsquedas de usuarios)
 results/
 
