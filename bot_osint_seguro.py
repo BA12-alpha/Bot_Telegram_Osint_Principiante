@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BOT OSINT CIBERHACKERCITO - VERSIÓN SEGURA 10.0
-- Configuración centralizada en config.json
+CYBERMENTOR BOT - VERSIÓN EDUCATIVA 11.0
+- Bot educativo interactivo de ciberseguridad
+- Sistema de progreso y seguimiento de usuarios
+- Curriculum estructurado desde principiante a experto
 - OSINT defensivo (IP, dominio, email, URL, DNS, SSL, subdominios, imagen, redes sociales…)
 - Cifrado educativo (Fernet AES) y análisis de cadenas (/analyze)
 - Menú dinámico con botones (/menu) y aspecto más profesional
@@ -35,6 +37,10 @@ import dns.resolver
 import whois
 from PIL import Image, ExifTags
 from cryptography.fernet import Fernet
+
+# CyberMentor modules
+from database import Database
+from curriculum import Curriculum
 
 # ===========================================================
 # CARGA DE CONFIGURACIÓN
@@ -103,6 +109,17 @@ except Exception:
 REQUESTS_HEADERS = {"User-Agent": "CiberhackercitoOSINT/3.0 (+seguridad)"}
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN, parse_mode="Markdown")
+
+# ===========================================================
+# CYBERMENTOR INITIALIZATION
+# ===========================================================
+
+# Initialize database and curriculum
+db = Database("cybermentor.db")
+curriculum = Curriculum()
+
+# User session states for interactive flows
+user_states: Dict[int, Dict[str, Any]] = defaultdict(dict)
 
 # ===========================================================
 # UTILIDADES / SEGURIDAD
@@ -996,6 +1013,10 @@ def explain_topic(topic: str) -> str:
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.row(
+        InlineKeyboardButton("🎓 Aprendizaje", callback_data="menu_learning"),
+        InlineKeyboardButton("📊 Mi Progreso", callback_data="cmd_progreso"),
+    )
+    kb.row(
         InlineKeyboardButton("🛰 OSINT básico", callback_data="menu_osint"),
         InlineKeyboardButton("🌐 Web / URL", callback_data="menu_web"),
     )
@@ -1007,6 +1028,24 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton("📚 Ayuda", callback_data="menu_help"),
     )
     return kb
+
+
+def learning_menu_text() -> str:
+    return (
+        "*🎓 APRENDIZAJE*\n\n"
+        "`/leccion` – Ver lección actual\n"
+        "`/ejercicio` – Solicitar ejercicio práctico\n"
+        "`/entregar <respuesta>` – Entregar ejercicio\n"
+        "`/progreso` – Ver tu progreso\n"
+        "`/especialidad` – Ver especializaciones\n"
+        "`/recursos` – Recursos adicionales\n\n"
+        "*Módulos disponibles:*\n"
+        "A. Fundamentos (0-20%)\n"
+        "B. Redes y Protocolos (21-40%)\n"
+        "C. Programación (41-60%)\n"
+        "D. Pentesting (61-80%)\n"
+        "E. Especializaciones (81-100%)\n"
+    )
 
 
 def osint_menu_text() -> str:
@@ -1071,12 +1110,66 @@ def help_menu_text() -> str:
 # MANEJADORES DE COMANDOS
 # ===========================================================
 
-@bot.message_handler(commands=["start", "help", "ayuda"])
+@bot.message_handler(commands=["start"])
 def send_welcome(message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    
+    # Check if user exists
+    user = db.get_user(user_id)
+    
+    if user:
+        # Returning user
+        text = (
+            f"*🎓 ¡Bienvenido de nuevo, {username or 'estudiante'}!*\n\n"
+            f"Estás en el nivel *{user['level']}*\n"
+            f"XP: {user['xp']} puntos\n"
+            f"Módulo actual: *{curriculum.get_module(user['current_module'])['name']}*\n"
+            f"Lección: {user['current_lesson']}\n\n"
+            "¿Continuamos donde te quedaste?"
+        )
+        
+        kb = InlineKeyboardMarkup()
+        kb.row(
+            InlineKeyboardButton("📖 Continuar lección", callback_data="continue_lesson"),
+            InlineKeyboardButton("📊 Ver progreso", callback_data="cmd_progreso")
+        )
+        kb.row(
+            InlineKeyboardButton("📚 Menú principal", callback_data="main_menu")
+        )
+        
+        bot.send_message(message.chat.id, text, reply_markup=kb)
+    else:
+        # New user - Start onboarding
+        text = (
+            "*🎓 ¡Hola futuro experto en ciberseguridad!*\n\n"
+            "Soy *CyberMentor*, tu profesor virtual. "
+            "Voy a guiarte desde cero hasta nivel experto en seguridad informática.\n\n"
+            "¿Desde qué dispositivo estudiarás principalmente?"
+        )
+        
+        kb = InlineKeyboardMarkup()
+        kb.row(
+            InlineKeyboardButton("📱 Smartphone", callback_data="device_mobile"),
+            InlineKeyboardButton("💻 Computadora", callback_data="device_computer")
+        )
+        
+        bot.send_message(message.chat.id, text, reply_markup=kb)
+
+
+@bot.message_handler(commands=["help", "ayuda"])
+def send_help(message):
     text = (
-        "*🤖 BOT OSINT CIBERHACKERCITO – V10.0*\n\n"
-        "Bot de análisis OSINT y seguridad defensiva.\n\n"
-        "Pulsa el botón para ver el menú principal 👇"
+        "*🤖 CYBERMENTOR BOT – V11.0*\n\n"
+        "Bot educativo de ciberseguridad y herramientas OSINT.\n\n"
+        "*Comandos de Aprendizaje:*\n"
+        "`/leccion` - Ver lección actual\n"
+        "`/ejercicio` - Solicitar ejercicio\n"
+        "`/entregar` - Entregar ejercicio\n"
+        "`/progreso` - Ver tu progreso\n"
+        "`/especialidad` - Ver especializaciones\n\n"
+        "*Herramientas OSINT:*\n"
+        "Usa `/menu` para ver todas las herramientas disponibles.\n"
     )
     bot.send_message(
         message.chat.id,
@@ -1096,7 +1189,9 @@ def handle_menu(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_"))
 def on_menu_callback(call):
-    if call.data == "menu_osint":
+    if call.data == "menu_learning":
+        text = learning_menu_text()
+    elif call.data == "menu_osint":
         text = osint_menu_text()
     elif call.data == "menu_web":
         text = web_menu_text()
@@ -1118,6 +1213,406 @@ def on_menu_callback(call):
         )
     except Exception:
         bot.answer_callback_query(call.id, "Actualizando menú…")
+
+
+# ===========================================================
+# CYBERMENTOR CALLBACK HANDLERS
+# ===========================================================
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("device_"))
+def handle_device_selection(call):
+    user_id = call.from_user.id
+    username = call.from_user.username
+    
+    device_type = "mobile" if call.data == "device_mobile" else "computer"
+    device_icon = "📱" if device_type == "mobile" else "💻"
+    
+    # Create user profile
+    db.create_user(user_id, username, device_type)
+    
+    text = (
+        f"*¡Perfecto! {device_icon}*\n\n"
+        "He creado tu perfil de estudiante.\n\n"
+        f"*Nivel:* Principiante\n"
+        f"*XP:* 0 puntos\n"
+        f"*Dispositivo:* {device_icon} {'Smartphone' if device_type == 'mobile' else 'Computadora'}\n\n"
+        "Tu experiencia de aprendizaje se ha adaptado a tu dispositivo.\n\n"
+        "🎯 *Comenzaremos con el Módulo A: Fundamentos*\n\n"
+        "¿Listo para tu primera lección?"
+    )
+    
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton("📖 Comenzar primera lección", callback_data="continue_lesson")
+    )
+    kb.row(
+        InlineKeyboardButton("📚 Ver módulos", callback_data="show_modules")
+    )
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=kb
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=kb)
+    
+    bot.answer_callback_query(call.id, "¡Perfil creado!")
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "continue_lesson")
+def handle_continue_lesson(call):
+    user_id = call.from_user.id
+    user = db.get_user(user_id)
+    
+    if not user:
+        bot.answer_callback_query(call.id, "Error: Usuario no encontrado")
+        return
+    
+    lesson_id = user['current_lesson']
+    lesson = curriculum.get_lesson(lesson_id)
+    
+    if not lesson:
+        bot.answer_callback_query(call.id, "Lección no encontrada")
+        return
+    
+    # Display lesson
+    text = lesson['content']
+    
+    # Add navigation buttons
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton("❓ Responder pregunta", callback_data=f"quiz_{lesson_id}"),
+        InlineKeyboardButton("📝 Ejercicio", callback_data=f"exercise_{lesson_id}")
+    )
+    kb.row(
+        InlineKeyboardButton("✅ Completar lección", callback_data=f"complete_{lesson_id}"),
+        InlineKeyboardButton("🔙 Menú", callback_data="main_menu")
+    )
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=kb
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=kb)
+    
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("quiz_"))
+def handle_quiz(call):
+    lesson_id = call.data.replace("quiz_", "")
+    lesson = curriculum.get_lesson(lesson_id)
+    
+    if not lesson or not lesson.get('questions'):
+        bot.answer_callback_query(call.id, "No hay preguntas para esta lección")
+        return
+    
+    # Get first question
+    question = lesson['questions'][0]
+    
+    text = f"*❓ Pregunta de comprensión:*\n\n{question['q']}"
+    
+    kb = InlineKeyboardMarkup()
+    for i, option in enumerate(question['options']):
+        kb.row(InlineKeyboardButton(option, callback_data=f"answer_{lesson_id}_{i}"))
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=kb
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=kb)
+    
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("exercise_"))
+def handle_exercise_callback(call):
+    lesson_id = call.data.replace("exercise_", "")
+    user_id = call.from_user.id
+    
+    # Find exercise for this lesson
+    exercise = None
+    for ex_id, ex in curriculum.exercises.items():
+        if ex['lesson'] == lesson_id:
+            exercise = ex
+            break
+    
+    if not exercise:
+        bot.answer_callback_query(call.id, "No hay ejercicios disponibles")
+        return
+    
+    text = (
+        f"*📝 EJERCICIO: {exercise['title']}*\n\n"
+        f"{exercise['description']}\n\n"
+        f"*XP:* {exercise.get('xp', 30)} puntos\n\n"
+        f"Usa `/entregar <tu_respuesta>` para enviar tu solución."
+    )
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text)
+    
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("answer_"))
+def handle_answer(call):
+    parts = call.data.split("_")
+    lesson_id = parts[1]
+    answer_idx = int(parts[2])
+    
+    lesson = curriculum.get_lesson(lesson_id)
+    if not lesson or not lesson.get('questions'):
+        bot.answer_callback_query(call.id, "Error")
+        return
+    
+    question = lesson['questions'][0]
+    correct_idx = question['answer']
+    
+    user_id = call.from_user.id
+    
+    if answer_idx == correct_idx:
+        # Correct answer - award XP
+        xp_earned = 10
+        db.add_xp(user_id, xp_earned)
+        
+        text = f"*✅ ¡Correcto!*\n\n+{xp_earned} XP\n\n¿Quieres continuar con la lección?"
+        bot.answer_callback_query(call.id, "¡Correcto! +10 XP", show_alert=True)
+    else:
+        text = f"*❌ Incorrecto*\n\nLa respuesta correcta era: *{question['options'][correct_idx]}*\n\n¿Quieres repasar la lección?"
+        bot.answer_callback_query(call.id, "Incorrecto. Revisa la lección", show_alert=True)
+    
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton("📖 Ver lección", callback_data="continue_lesson"),
+        InlineKeyboardButton("🔙 Menú", callback_data="main_menu")
+    )
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=kb
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=kb)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("complete_"))
+def handle_complete_lesson(call):
+    lesson_id = call.data.replace("complete_", "")
+    user_id = call.from_user.id
+    
+    lesson = curriculum.get_lesson(lesson_id)
+    if not lesson:
+        bot.answer_callback_query(call.id, "Error")
+        return
+    
+    # Mark lesson as complete
+    db.mark_lesson_complete(user_id, lesson_id, score=100)
+    
+    # Award XP
+    xp_earned = lesson.get('xp', 50)
+    new_xp = db.add_xp(user_id, xp_earned)
+    
+    # Get next lesson
+    next_lesson_id = curriculum.get_next_lesson(lesson_id)
+    
+    # Update user's current lesson
+    if next_lesson_id:
+        db.update_user(user_id, current_lesson=next_lesson_id)
+    
+    # Check for achievements
+    completed_lessons = db.get_completed_lessons(user_id)
+    if len(completed_lessons) == 1:
+        db.add_achievement(user_id, "first_lesson", "Primera Lección Completada")
+        achievement_text = "\n\n🏆 *¡Logro desbloqueado: Primera Lección!*"
+    elif len(completed_lessons) == 5:
+        db.add_achievement(user_id, "module_a", "Módulo A Completado")
+        achievement_text = "\n\n🏆 *¡Logro desbloqueado: Módulo A Completado!*"
+    else:
+        achievement_text = ""
+    
+    text = (
+        f"*✅ ¡Lección completada!*\n\n"
+        f"*{lesson['title']}*\n\n"
+        f"+{xp_earned} XP (Total: {new_xp})\n"
+        f"Lecciones completadas: {len(completed_lessons)}"
+        f"{achievement_text}\n\n"
+    )
+    
+    kb = InlineKeyboardMarkup()
+    if next_lesson_id:
+        text += f"*Siguiente:* Lección {next_lesson_id}"
+        kb.row(InlineKeyboardButton("➡️ Siguiente lección", callback_data="continue_lesson"))
+    else:
+        text += "¡Has completado todas las lecciones disponibles!"
+    
+    kb.row(
+        InlineKeyboardButton("📊 Ver progreso", callback_data="cmd_progreso"),
+        InlineKeyboardButton("🔙 Menú", callback_data="main_menu")
+    )
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=kb
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=kb)
+    
+    bot.answer_callback_query(call.id, f"¡Felicitaciones! +{xp_earned} XP", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "show_modules")
+def handle_show_modules(call):
+    text = "*📚 MÓDULOS DE APRENDIZAJE*\n\n"
+    
+    for module_id, module in curriculum.modules.items():
+        text += f"*{module_id}. {module['name']}* ({module['progress_range'][0]}-{module['progress_range'][1]}%)\n"
+        text += f"   _{module['description']}_\n\n"
+    
+    kb = InlineKeyboardMarkup()
+    kb.row(InlineKeyboardButton("📖 Comenzar lección", callback_data="continue_lesson"))
+    kb.row(InlineKeyboardButton("🔙 Inicio", callback_data="main_menu"))
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=kb
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=kb)
+    
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "main_menu")
+def handle_main_menu(call):
+    text = "Selecciona una categoría:"
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=main_menu_keyboard()
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=main_menu_keyboard())
+    
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "cmd_progreso")
+def handle_progreso_callback(call):
+    user_id = call.from_user.id
+    stats = db.get_user_stats(user_id)
+    
+    if not stats:
+        bot.answer_callback_query(call.id, "Error al obtener progreso")
+        return
+    
+    completed_lessons = db.get_completed_lessons(user_id)
+    progress_pct = curriculum.calculate_progress(completed_lessons)
+    
+    text = (
+        "*📊 TU PROGRESO*\n\n"
+        f"*Nivel:* {stats['level'].title()}\n"
+        f"*XP:* {stats['xp']} puntos\n"
+        f"*Progreso general:* {progress_pct}%\n\n"
+        f"*Estadísticas:*\n"
+        f"• Lecciones completadas: {stats['completed_lessons']}\n"
+        f"• Ejercicios entregados: {stats['exercises_submitted']}\n"
+        f"• Logros: {stats['achievements']}\n"
+        f"• Puntuación media: {stats['average_score']}%\n\n"
+        f"*Módulo actual:* {curriculum.get_module(stats['current_module'])['name']}\n"
+        f"*Lección actual:* {stats['current_lesson']}\n"
+    )
+    
+    # Check level progression
+    if stats['xp'] >= 1000:
+        level = "Expert"
+    elif stats['xp'] >= 500:
+        level = "Advanced"
+    elif stats['xp'] >= 200:
+        level = "Intermediate"
+    else:
+        level = "Beginner"
+    
+    if level != stats['level']:
+        db.update_user(user_id, level=level)
+        text += f"\n🎉 *¡Has subido de nivel a {level}!*"
+    
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton("📖 Continuar aprendiendo", callback_data="continue_lesson"),
+        InlineKeyboardButton("🏆 Ver logros", callback_data="show_achievements")
+    )
+    kb.row(InlineKeyboardButton("🔙 Menú", callback_data="main_menu"))
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=kb
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=kb)
+    
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "show_achievements")
+def handle_show_achievements(call):
+    user_id = call.from_user.id
+    achievements = db.get_achievements(user_id)
+    
+    if not achievements:
+        text = "*🏆 LOGROS*\n\nAún no has desbloqueado logros. ¡Sigue estudiando!"
+    else:
+        text = "*🏆 TUS LOGROS*\n\n"
+        for ach in achievements:
+            text += f"🏅 *{ach['achievement_name']}*\n"
+            text += f"   Obtenido: {ach['earned_at'][:10]}\n\n"
+    
+    kb = InlineKeyboardMarkup()
+    kb.row(InlineKeyboardButton("📊 Ver progreso", callback_data="cmd_progreso"))
+    kb.row(InlineKeyboardButton("🔙 Menú", callback_data="main_menu"))
+    
+    try:
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=kb
+        )
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=kb)
+    
+    bot.answer_callback_query(call.id)
 
 
 @bot.message_handler(commands=["phone"])
@@ -1844,6 +2339,257 @@ def handle_genpass(message):
     except Exception as e:
         logger.error(f"handle_genpass error: {e}")
         bot.reply_to(message, clean_text(f"Error: {str(e)}"))
+
+
+# ===========================================================
+# CYBERMENTOR COMMAND HANDLERS
+# ===========================================================
+
+@bot.message_handler(commands=["leccion"])
+def handle_leccion(message):
+    """Show current lesson"""
+    try:
+        user_id = message.from_user.id
+        user = db.get_user(user_id)
+        
+        if not user:
+            bot.reply_to(message, "Usa `/start` para comenzar tu aprendizaje.", parse_mode="Markdown")
+            return
+        
+        lesson_id = user['current_lesson']
+        lesson = curriculum.get_lesson(lesson_id)
+        
+        if not lesson:
+            bot.reply_to(message, "No se encontró la lección actual.")
+            return
+        
+        text = lesson['content']
+        
+        kb = InlineKeyboardMarkup()
+        kb.row(
+            InlineKeyboardButton("❓ Pregunta", callback_data=f"quiz_{lesson_id}"),
+            InlineKeyboardButton("✅ Completar", callback_data=f"complete_{lesson_id}")
+        )
+        kb.row(InlineKeyboardButton("🔙 Menú", callback_data="main_menu"))
+        
+        bot.send_message(message.chat.id, text, reply_markup=kb)
+    except Exception as e:
+        logger.error(f"handle_leccion error: {e}")
+        bot.reply_to(message, clean_text(f"Error: {str(e)}"))
+
+
+@bot.message_handler(commands=["ejercicio"])
+def handle_ejercicio(message):
+    """Request exercise for current lesson"""
+    try:
+        user_id = message.from_user.id
+        user = db.get_user(user_id)
+        
+        if not user:
+            bot.reply_to(message, "Usa `/start` para comenzar tu aprendizaje.", parse_mode="Markdown")
+            return
+        
+        lesson_id = user['current_lesson']
+        
+        # Find exercise for this lesson
+        exercise = None
+        for ex_id, ex in curriculum.exercises.items():
+            if ex['lesson'] == lesson_id:
+                exercise = ex
+                break
+        
+        if not exercise:
+            bot.reply_to(message, "No hay ejercicios disponibles para esta lección aún.")
+            return
+        
+        text = (
+            f"*📝 EJERCICIO: {exercise['title']}*\n\n"
+            f"{exercise['description']}\n\n"
+            f"*XP:* {exercise.get('xp', 30)} puntos\n\n"
+            f"Usa `/entregar <tu_respuesta>` para enviar tu solución."
+        )
+        
+        bot.send_message(message.chat.id, text, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"handle_ejercicio error: {e}")
+        bot.reply_to(message, clean_text(f"Error: {str(e)}"))
+
+
+@bot.message_handler(commands=["entregar"])
+def handle_entregar(message):
+    """Submit exercise solution"""
+    try:
+        user_id = message.from_user.id
+        user = db.get_user(user_id)
+        
+        if not user:
+            bot.reply_to(message, "Usa `/start` para comenzar tu aprendizaje.", parse_mode="Markdown")
+            return
+        
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            bot.reply_to(
+                message,
+                "Uso: `/entregar <tu_respuesta>`\nEj: `/entregar Mi solución al ejercicio...`",
+                parse_mode="Markdown"
+            )
+            return
+        
+        submission = parts[1]
+        lesson_id = user['current_lesson']
+        
+        # Find exercise for this lesson
+        exercise_id = f"E{lesson_id}"
+        exercise = curriculum.get_exercise(exercise_id)
+        
+        # Simple feedback system
+        if len(submission) < 10:
+            feedback = "Tu respuesta es muy corta. Desarrolla más tu solución."
+            score = 30
+        elif len(submission) > 1000:
+            feedback = "Tu respuesta es muy extensa. Intenta ser más conciso."
+            score = 70
+        else:
+            feedback = "¡Buena estructura! Revisa los puntos clave de la lección para mejorar."
+            score = 80
+        
+        # Save submission
+        db.save_exercise_submission(user_id, exercise_id, submission, feedback, score)
+        
+        # Award XP
+        xp_earned = score // 2  # Half the score as XP
+        new_xp = db.add_xp(user_id, xp_earned)
+        
+        text = (
+            f"*✅ Ejercicio recibido*\n\n"
+            f"*Puntuación:* {score}/100\n"
+            f"*XP ganado:* +{xp_earned} (Total: {new_xp})\n\n"
+            f"*Retroalimentación:*\n{feedback}\n\n"
+            "¿Quieres intentarlo de nuevo o continuar?"
+        )
+        
+        kb = InlineKeyboardMarkup()
+        kb.row(
+            InlineKeyboardButton("🔄 Reintentar", callback_data=f"exercise_{lesson_id}"),
+            InlineKeyboardButton("➡️ Continuar", callback_data="continue_lesson")
+        )
+        
+        bot.send_message(message.chat.id, text, reply_markup=kb)
+    except Exception as e:
+        logger.error(f"handle_entregar error: {e}")
+        bot.reply_to(message, clean_text(f"Error: {str(e)}"))
+
+
+@bot.message_handler(commands=["progreso"])
+def handle_progreso_command(message):
+    """Show user progress"""
+    try:
+        user_id = message.from_user.id
+        stats = db.get_user_stats(user_id)
+        
+        if not stats:
+            bot.reply_to(message, "Usa `/start` para comenzar tu aprendizaje.", parse_mode="Markdown")
+            return
+        
+        completed_lessons = db.get_completed_lessons(user_id)
+        progress_pct = curriculum.calculate_progress(completed_lessons)
+        
+        text = (
+            "*📊 TU PROGRESO*\n\n"
+            f"*Nivel:* {stats['level'].title()}\n"
+            f"*XP:* {stats['xp']} puntos\n"
+            f"*Progreso general:* {progress_pct}%\n\n"
+            f"*Estadísticas:*\n"
+            f"• Lecciones completadas: {stats['completed_lessons']}\n"
+            f"• Ejercicios entregados: {stats['exercises_submitted']}\n"
+            f"• Logros: {stats['achievements']}\n"
+            f"• Puntuación media: {stats['average_score']}%\n\n"
+            f"*Módulo actual:* {curriculum.get_module(stats['current_module'])['name']}\n"
+            f"*Lección actual:* {stats['current_lesson']}\n"
+        )
+        
+        kb = InlineKeyboardMarkup()
+        kb.row(
+            InlineKeyboardButton("📖 Continuar lección", callback_data="continue_lesson"),
+            InlineKeyboardButton("🏆 Ver logros", callback_data="show_achievements")
+        )
+        
+        bot.send_message(message.chat.id, text, reply_markup=kb)
+    except Exception as e:
+        logger.error(f"handle_progreso error: {e}")
+        bot.reply_to(message, clean_text(f"Error: {str(e)}"))
+
+
+@bot.message_handler(commands=["especialidad"])
+def handle_especialidad(message):
+    """Show specializations"""
+    try:
+        user_id = message.from_user.id
+        user = db.get_user(user_id)
+        
+        if not user:
+            bot.reply_to(message, "Usa `/start` para comenzar tu aprendizaje.", parse_mode="Markdown")
+            return
+        
+        # Check if user has enough progress
+        completed_lessons = db.get_completed_lessons(user_id)
+        if len(completed_lessons) < 10:
+            bot.reply_to(
+                message,
+                f"Necesitas completar al menos 10 lecciones para elegir una especialización.\n"
+                f"Lecciones completadas: {len(completed_lessons)}/10"
+            )
+            return
+        
+        user_specs = db.get_specializations(user_id)
+        
+        text = "*🎯 ESPECIALIZACIONES (HATS)*\n\n"
+        
+        for spec_id, spec in curriculum.get_all_specializations().items():
+            icon = spec['icon']
+            name = spec['name']
+            desc = spec['description']
+            skills = spec['skills']
+            
+            selected = "✅ SELECCIONADA" if spec_id in user_specs else ""
+            
+            text += f"{icon} *{name}* {selected}\n"
+            text += f"   _{desc}_\n"
+            text += f"   Habilidades: {skills}\n\n"
+        
+        text += "\nPara elegir una especialización, contacta al administrador."
+        
+        bot.send_message(message.chat.id, text, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"handle_especialidad error: {e}")
+        bot.reply_to(message, clean_text(f"Error: {str(e)}"))
+
+
+@bot.message_handler(commands=["recursos"])
+def handle_recursos(message):
+    """Show additional resources"""
+    text = (
+        "*📚 RECURSOS ADICIONALES*\n\n"
+        "*Plataformas de práctica:*\n"
+        "• TryHackMe - tryhackme.com\n"
+        "• HackTheBox - hackthebox.com\n"
+        "• OverTheWire - overthewire.org\n"
+        "• PentesterLab - pentesterlab.com\n\n"
+        "*Bug Bounty:*\n"
+        "• HackerOne - hackerone.com\n"
+        "• Bugcrowd - bugcrowd.com\n"
+        "• Intigriti - intigriti.com\n\n"
+        "*Aprendizaje:*\n"
+        "• OWASP - owasp.org\n"
+        "• CyberSecLabs - cyberseclabs.co.uk\n"
+        "• Portswigger Academy - portswigger.net/web-security\n\n"
+        "*Certificaciones:*\n"
+        "• CEH - Certified Ethical Hacker\n"
+        "• OSCP - Offensive Security Certified Professional\n"
+        "• CompTIA Security+\n"
+    )
+    
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
 @bot.message_handler(commands=["explain"])
